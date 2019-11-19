@@ -451,7 +451,7 @@ results[!sensitivity == "Si" & method == "New.approach"] %>%
   theme(legend.position = "top") 
 ```
 
-```{r plot_savings, cache=TRUE, dependson="arrange_results_algorithm", dev = "tikz", fig.height=3, fig.width=6.5, fig.cap="Evolution of ranks for first and total-order indices across different base sample sizes"}
+```{r plot_savings, cache=TRUE, dependson="arrange_results_algorithm", dev = "tikz", fig.height=3, fig.width=6.5, fig.cap="Percentage of savings over the total accumulated model runs."}
 
 # PLOT SAVINGS ----------------------------------------------------------------
 
@@ -471,7 +471,7 @@ melt(savings.dt, measure.vars = c("New.approach", "Normal.approach")) %>%
   guides(color = guide_legend(nrow = 1,byrow = TRUE))
 ```
 
-```{r plot_ranks, cache=TRUE, dependson="arrange_results_algorithm", dev = "tikz", fig.height=8, fig.width=4, fig.cap="Percentage of saving over the total accumulated model runs."}
+```{r plot_ranks, cache=TRUE, dependson="arrange_results_algorithm", dev = "tikz", fig.height=8, fig.width=4, fig.cap="Evolution of ranks for first and total-order indices across different base sample sizes"}
 
 # PLOT RANKS ------------------------------------------------------------------
 
