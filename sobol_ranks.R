@@ -16,19 +16,19 @@ loadPackages <- function(x) {
   }
 }
 
-loadPackages(c("data.table", "ggplot2", "sensobol", "scales", "parallel", "grid", 
+loadPackages(c("sensobol", "tidyverse", "parallel", "grid", 
                "cowplot", "gridExtra", "sensitivity", "wesanderson", "RColorBrewer", 
-               "tikzDevice"))
+               "tikzDevice", "scales", "data.table"))
 
 # SET CHECKPOINT --------------------------------------------------------------
 
-#dir.create(".checkpoint")
+dir.create(".checkpoint")
 
-#library("checkpoint")
+library("checkpoint")
 
-#checkpoint("2019-08-28", 
-           #R.version ="3.6.1", 
-           #checkpointLocation = getwd())
+checkpoint("2019-08-28", 
+           R.version ="3.6.3", 
+           checkpointLocation = getwd())
 
 # CUSTOM FUNCTION TO DEFINE THE PLOT THEMES -----------------------------------
 
@@ -54,6 +54,33 @@ G_Fun <- function(X) {
   for (j in 1:8) {
     y <- y * (abs(4 * X[, j] - 2) + a[j])/(1 + a[j])
   }
+  return(y)
+}
+
+# Special G' function
+G_Fun_mod <- function(X) {
+  a <- c(0, 0, 0, 0, 0, 0, 0, 0)
+  y <- 1
+  for (j in 1:8) {
+    y <- y * (abs(4 * X[, j] - 2) + a[j])/(1 + a[j])
+  }
+  return(y)
+}
+
+# B1 function (in Kucherenko et al. 2011)
+B1 <- function(X) {
+  y <- 1
+  for(j in 1:ncol(X)) {
+    y <- y * (ncol(X) - X[, j]) / (ncol(X) - 0.5)
+  }
+  return(y)
+}
+
+# C1 function (in Kucherenko et al. 2011)
+C1 <- function(X) {
+  y <- 1
+  for (j in 1:ncol(X)) {
+    y <- y * (abs(4 * X[, j] - 2))}
   return(y)
 }
 
@@ -176,7 +203,7 @@ compute_normal <- function(N, params, test_F) {
   dt <- data.table(cbind(indices, ranks))
   dt[, parameters:= rep(params, times = 2)][
     , sensitivity:= rep(c("Si", "STi"), each = length(params))][
-    , method:= "Normal approach"][
+    , method:= "Normal.approach"][
     , N:= N][
     , model.runs:= N * (length(params) + 2)]
   return(dt)
@@ -198,7 +225,7 @@ compute_saving <- function(dt, params, N, test_F, eps = 0.05) {
     dt <- data.table(cbind(indices, ranks))
     dt[, parameters:= rep(c(params[Ti.important], "set"), times = 2)][
       , sensitivity:= rep(c("Si", "STi"), each = length(c(params[Ti.important], "set")))][
-      , method:= "New approach"][
+      , method:= "New.approach"][
       , N:= N][
       , model.runs:= N * (length(params) - length(set) + 3)]
     final <- rbind(dt2, dt)
@@ -209,22 +236,22 @@ compute_saving <- function(dt, params, N, test_F, eps = 0.05) {
 }
 
 # Full algorithm
-full_algorithm <- function(max.exponent, params, test_F) {
+full_algorithm <- function(max.exponent, params, epsilon_1, epsilon_2, test_F) {
   N <- sapply(2:max.exponent, function(x) 2 ^ x)
   dt <- list()
   for(i in seq_along(N)) {
     dt[[i]] <- compute_normal(N[i], params = params, test_F = test_F)
     if(i > 1) {
-      a <- dt[[i]][sensitivity == "STi" & method == "Normal approach"]
-      b <- dt[[i-1]][sensitivity == "STi" & method == "Normal approach"]
+      a <- dt[[i]][sensitivity == "STi" & method == "Normal.approach"]
+      b <- dt[[i-1]][sensitivity == "STi" & method == "Normal.approach"]
       # CHECK CONDITION 1---------------------------------
       condition1 <- identical(a[, ranks], b[, ranks])
       # CHECK CONDITION 2---------------------------------
       ind <- which(!a[, ranks] == b[, ranks])
       condition2 <- condition2 <- all(abs(a[ind][, indices] - b[ind][, indices]) / 
-                          (a[ind][, indices] + b[ind][, indices]) < 0.1)
+                          (a[ind][, indices] + b[ind][, indices]) < epsilon_1)
       # CHECK CONDITION 3 ---------------------------------
-      condition3 <- all(c(a[ind][, indices], b[ind][, indices]) < 0.02)
+      condition3 <- all(c(a[ind][, indices], b[ind][, indices]) < epsilon_2)
       if(condition1 == TRUE | 
          condition1 == FALSE & condition2 == TRUE |
          condition1 == FALSE & condition2 == FALSE & condition3 == TRUE) {
@@ -236,15 +263,53 @@ full_algorithm <- function(max.exponent, params, test_F) {
   }
   # Compute total number of model runs for the new algorithm
   final <- rbindlist(dt)
-  N_convergence <- final[method == "New approach" & sensitivity == "STi", min(N)]
-  a <- final[N == N_convergence & method == "Normal approach" 
+  N_convergence <- final[method == "New.approach" & sensitivity == "STi", min(N)]
+  a <- final[N == N_convergence & method == "Normal.approach" 
              & sensitivity == "STi"][, parameters]
   b <- final[N == N_convergence & !parameters == "set" & 
-               method == "New approach" & sensitivity == "STi"][, parameters]
+               method == "New.approach" & sensitivity == "STi"][, parameters]
   k_noninfluential <- length(setdiff(a, b))
-  final[, model.runs:= ifelse(method %in% "New approach", 
+  final[, model.runs:= ifelse(method %in% "New.approach", 
                               model.runs + N_convergence * k_noninfluential, 
                               model.runs)]
+  return(final)
+}
+
+# Full algorithm in a function
+fun_algorithm <- function(max.exponent, epsilon_1, epsilon_2) {
+  test_functions <- c("G_Fun","G_Fun_mod","bratley1992_Fun", 
+                      "oakley_Fun", "morris_Fun", "B1", "C1")
+  out <- list()
+  for(i in test_functions) {
+    if(i == "G_Fun") {
+      params <- paste("X", 1:8, sep = "")
+      test_F <- G_Fun
+    } else if(i == "G_Fun_mod") {
+      params <- paste("X", 1:8, sep = "")
+      test_F <- G_Fun_mod
+    } else if(i == "bratley1992_Fun") {
+      params <- paste("X", 1:8, sep = "")
+      test_F <- bratley1992_Fun
+    } else if(i == "oakley_Fun") {
+      params <- paste("X", 1:15, sep = "")
+      test_F <- oakley_Fun
+    } else if(i == "B1") {
+      params <- paste("X", 1:8, sep = "")
+      test_F <- B1
+    } else if(i == "C1") {
+      params <- paste("X", 1:8, sep = "")
+      test_F <- C1
+    } else {
+      params <- paste("X", 1:20, sep = "")
+      test_F <- sensitivity::morris.fun
+    }
+    out[[i]] <- full_algorithm(max.exponent = max.exponent, 
+                               params = params, 
+                               epsilon_1 = epsilon_1,
+                               epsilon_2 = epsilon_2,
+                               test_F = test_F)
+  }  
+  final <- rbindlist(out, idcol = "model")
   return(final)
 }
 
@@ -253,55 +318,60 @@ full_algorithm <- function(max.exponent, params, test_F) {
 
 # RUN THE MODEL --------------------------------------------------------------
 
-max.exponent <- 16
-test_functions <- c("G_Fun", "bratley1992_Fun", "oakley_Fun", "morris_Fun")
-out <- list()
+# Define epsilons and max exponent
+epsilon_1 <- seq(0.05, 0.1, 0.05)
+epsilon_2 <- seq(0.01, 0.02, 0.005)
+max.exponent <- 13
 
-for(i in test_functions) {
-  if(i == "G_Fun") {
-    params <- paste("X", 1:8, sep = "")
-    test_F <- G_Fun
-  } else if(i == "bratley1992_Fun") {
-    params <- paste("X", 1:8, sep = "")
-    test_F <- bratley1992_Fun
-  } else if(i == "oakley_Fun") {
-    params <- paste("X", 1:15, sep = "")
-    test_F <- oakley_Fun
-  } else {
-    params <- paste("X", 1:20, sep = "")
-    test_F <- sensitivity::morris.fun
-  }
-  out[[i]] <- full_algorithm(max.exponent = max.exponent, 
-                             params = params, 
-                             test_F = test_F)
-}  
-
+# Run model
+out <- mclapply(epsilon_1, function(x) 
+  lapply(epsilon_2, function(y) 
+    fun_algorithm(max.exponent = max.exponent, epsilon_1 = x, epsilon_2 = y)), 
+  mc.cores = detectCores())
 
 ## ----arrange_results_algorithm, cache=TRUE, dependson="run_saving_algorithm"----
 
 # ARRANGE RESULTS -------------------------------------------------------------
+test_functions <- c("G_Fun","G_Fun_mod","bratley1992_Fun", 
+                    "oakley_Fun", "morris_Fun", "B1", "C1")
 
 # Arrange results
-model_names <- c("Sobol' G", "Bratley et al. 1994", 
-                 "Oakley and O'Hagan 2004", "Morris 1991")
-names(out) <- model_names
-results <- rbindlist(out, idcol = "model") %>%
-  .[, model:= factor(model, levels = model_names)] %>%
-  .[, parameters:= factor(parameters, 
-                          levels = c(paste("X", 1:20, sep = ""), "set"))] %>%
-  .[, method:= ifelse(method %in% "New approach", "New.approach", "Normal.approach")]
+model_names <- c("Sobol' G", "Sobol'G modified", "Bratley et al. 1994", 
+                 "Oakley and O'Hagan 2004", "Morris 1991", "B1", "C1")
+
+names(out) <- epsilon_1
+for(i in names(out)) {
+  names(out[[i]]) <- epsilon_2
+}
+
+results <- lapply(out, function(x) lapply(x, function(y) {
+  tmp <- y[, parameters:= factor(parameters, 
+                            levels = c(paste("X", 1:20, sep = ""), "set"))] %>%
+    .[, Type:= ifelse(parameters %in% "set", "Set", "Individual")] %>%
+    .[, model:= ifelse(model == "G_Fun", "Sobol G", 
+                       ifelse(model == "G_Fun_mod", "Sobol G modified", 
+                              ifelse(model == "bratley1992_Fun", "Bratley et al. 1994", 
+                                     ifelse(model == "oakley_Fun", "Oakley and O'Hagan 2004", 
+                                            ifelse(model == "morris_Fun", "Morris 1991", 
+                                                   ifelse(model == "B1", "B1", "C1"))))))]
+}))
 
 # Compare number of model runs and savings
-tmp <- results[, .(model.runs = unique(model.runs)), .(model, N, method)]
-savings.dt <- dcast(tmp, model + N ~ method, value.var = "model.runs") %>%
-  .[, New.approach:= ifelse(New.approach %in% NA, Normal.approach, New.approach)] %>%
-  .[, saving:= 1 - (New.approach / Normal.approach)]
+tmp <- lapply(out, function(x) lapply(x, function(y) {
+  tmp <- y[, .(model.runs = unique(model.runs)), .(model, N, method)] %>%
+    dcast(., model + N ~ method, value.var = "model.runs") 
+}))
 
-# Compute cumulative number of runs
-cumulative.runs <- savings.dt[, cumsum(.SD), 
-                              .SDcols = c("New.approach", "Normal.approach"), model][
-                                , saving:= 1 - (New.approach / Normal.approach)]
-
+savings.dt <- lapply(tmp, function(x) lapply(x, function(y) {
+  tmp <- y[, New.approach:= ifelse(New.approach %in% NA, Normal.approach, New.approach)] %>%
+    .[, saving:= 1 - (New.approach / Normal.approach)] %>%
+    .[, model:= ifelse(model == "G_Fun", "Sobol G", 
+                       ifelse(model == "G_Fun_mod", "Sobol G modified", 
+                              ifelse(model == "bratley1992_Fun", "Bratley et al. 1994", 
+                                     ifelse(model == "oakley_Fun", "Oakley and O'Hagan 2004", 
+                                            ifelse(model == "morris_Fun", "Morris 1991", 
+                                                   ifelse(model == "B1", "B1", "C1"))))))]
+}))
 
 ## ----export_results, cache=TRUE, dependson="arrange_results_algorithm"----
 
@@ -310,46 +380,47 @@ cumulative.runs <- savings.dt[, cumsum(.SD),
 fwrite(results, "results.csv")
 fwrite(savings.dt, "savings.dt.csv")
 
-
 ## ----plot_results_algorithm, cache=TRUE, dependson="arrange_results_algorithm", dev = "tikz", fig.height=4, fig.width=5, fig.cap="Evolution of the $T_i$ and the $T_s$ along different sample sizes. The horizontal, red dotted line is at 0.05."----
 
 # PLOT RESULTS ---------------------------------------------------------------
 
-results <- results[, Type:= ifelse(parameters %in% "set", "Set", "Individual")]
-
-formatter <- function(...) function(x) format(round(x, 2), ...)
-
-results[!sensitivity == "Si" & method == "New.approach"] %>%
-  ggplot(., aes(N, indices, 
-                color = Type, 
-                group = parameters)) +
-  geom_line() +
-  scale_x_continuous(trans="log",
-                     breaks = trans_breaks("log2", function(x) 2 ^ x),
-                     labels = trans_format("log2", math_format(2^.x))) +
-  geom_point(size = 0.5) +
-  scale_color_manual(values = c("black", "blue"), 
-                     labels = c(expression(T[italic(i)]), 
-                                expression(T[italic(s)]))) +
-  labs(x = "N", 
-       y = "Variance") +
-  geom_hline(yintercept = 0.05, 
-             lty = 2, 
-             color = "red") +
-  facet_wrap(~model, 
-             ncol = 2, 
-             scales = "free") +
-  theme_AP() + 
-  theme(legend.position = "top") 
-
+lapply(results, function(x) lapply(x, function(y) 
+  y[, Type:= ifelse(parameters %in% "set", "Set", "Individual")] %>%
+    .[!sensitivity == "Si" & method == "New.approach"] %>%
+    ggplot(., aes(N, indices, 
+                  color = Type, 
+                  group = parameters)) +
+    geom_line() +
+    scale_x_continuous(trans="log",
+                       breaks = scales::trans_breaks("log2", function(x) 2 ^ x),
+                       labels = scales::trans_format("log2", scales::math_format(2^.x))) +
+    geom_point(size = 0.5) +
+    scale_color_manual(values = c("black", "blue"), 
+                       labels = c(expression(T[italic(i)]), 
+                                  expression(T[italic(s)]))) +
+    labs(x = "N", 
+         y = "Variance") +
+    geom_hline(yintercept = 0.05, 
+               lty = 2, 
+               color = "red") +
+    facet_wrap(~model, 
+               ncol = 2, 
+               scales = "free") +
+    theme_AP() + 
+    theme(legend.position = "top"))) 
 
 ## ----plot_savings, cache=TRUE, dependson="arrange_results_algorithm", dev = "tikz", fig.height=3, fig.width=6.5, fig.cap="Evolution of ranks for first and total-order indices across different base sample sizes"----
 
 # PLOT SAVINGS ----------------------------------------------------------------
 
-melt(savings.dt, measure.vars = c("New.approach", "Normal.approach")) %>%
-  .[, saving:= saving * 100] %>%
-  setnames(., "model", "Model") %>%
+lapply(savings.dt, function(x) lapply(x, function(y) 
+  melt(y, measure.vars = c("New.approach", "Normal.approach")) %>%
+    .[, saving:= saving * 100] %>%
+    setnames(., "model", "Model")) %>%
+    rbindlist(., idcol = "epsilon_2")) %>%
+  rbindlist(., idcol = "epsilon_1") %>%
+  .[, epsilon_1:= paste("$epsilon_s= ", epsilon_1, "$", sep = "")] %>%
+  .[, epsilon_2:= paste("$epsilon_b= ", epsilon_2, "$", sep = "")] %>%
   ggplot(., aes(N, saving, color = Model, shape = Model, group = Model)) +
   geom_point() + 
   geom_line() +
@@ -358,17 +429,19 @@ melt(savings.dt, measure.vars = c("New.approach", "Normal.approach")) %>%
                      labels = trans_format("log2", math_format(2^.x))) +
   labs(x = "Number of model runs", 
        y = "Saving (\\%)") +
+  facet_grid(epsilon_1 ~ epsilon_2) +
   theme_AP() + 
   theme(legend.position = "top") +
   guides(color = guide_legend(nrow = 1,byrow = TRUE))
-
+    
 
 ## ----plot_ranks, cache=TRUE, dependson="arrange_results_algorithm", dev = "tikz", fig.height=8, fig.width=4, fig.cap="Percentage of saving over the total accumulated model runs."----
 
 # PLOT RANKS ------------------------------------------------------------------
 
-results[method == "Normal.approach"] %>%
+results[[2]][[3]][method == "Normal.approach"] %>%
   .[, sensitivity:= ifelse(sensitivity %in% "Si", "$S_i$", "$T_i$")] %>%
+  .[sensitivity == "$S_i$"] %>%
   ggplot(., aes(N, ranks, group = parameters,
                 color = parameters)) +
   geom_point(size = 0.5) +
@@ -376,7 +449,10 @@ results[method == "Normal.approach"] %>%
   labs(x = "Base sample size",
        y = "Rank") +
   scale_color_discrete(name = "Parameters") +
-  scale_x_log10(labels = trans_format("log10", math_format(10^.x))) +
+  scale_x_continuous(trans="log",
+                     breaks = trans_breaks("log2", function(x) 2 ^ x),
+                     labels = trans_format("log2", math_format(2^.x))) +
+  scale_y_reverse() +
   facet_grid(model ~ sensitivity,
              scales = "free_y") +
   theme_bw() +
@@ -387,7 +463,6 @@ results[method == "Normal.approach"] %>%
                                          color = NA),
         legend.key = element_rect(fill = "transparent",
                                   color = NA))
-
 
 ## ----MAE, cache=TRUE, dependson="arrange_results_algorithm", fig.height = 6.5, fig.width = 3, dev="tikz", fig.cap="Mean Absolute Error for the Oakley and O'Hagan function."----
 
