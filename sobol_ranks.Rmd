@@ -543,7 +543,7 @@ lapply(savings.dt, function(x) lapply(x, function(y)
 
 ```{r plot_savings_functions2, cache=TRUE, dependson="arrange_results_algorithm", dev = c("tikz", "jpeg"), dpi=300, fig.height=4, fig.width=6.5, fig.cap="Percentage of savings over the total accumulated model runs."}
 
-# PLOT SAVINGS ----------------------------------------------------------------
+# PLOT SAVINGS ------------------------------------------------------------------
 
 lapply(savings.dt, function(x) lapply(x, function(y) 
   melt(y, measure.vars = c("New.approach", "Normal.approach")) %>%

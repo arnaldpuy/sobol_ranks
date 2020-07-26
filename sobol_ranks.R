@@ -1,8 +1,8 @@
-## ----setup, include=FALSE------------------------------------------------
+## ----setup, include=FALSE-----------------------------------------------
 knitr::opts_chunk$set(echo = TRUE)
 
 
-## ----load_packages, results="hide", message=FALSE, warning=FALSE---------
+## ----load_packages, results="hide", message=FALSE, warning=FALSE--------
 
 # LOAD PACKAGES ---------------------------------------------------------------
 
@@ -18,7 +18,7 @@ loadPackages <- function(x) {
 
 loadPackages(c("sensobol", "tidyverse", "parallel", "grid", 
                "cowplot", "gridExtra", "sensitivity", "wesanderson", "RColorBrewer", 
-               "tikzDevice", "scales", "data.table"))
+               "tikzDevice", "data.table"))
 
 # SET CHECKPOINT --------------------------------------------------------------
 
@@ -26,7 +26,7 @@ dir.create(".checkpoint")
 
 library("checkpoint")
 
-checkpoint("2019-08-28", 
+checkpoint("2020-07-02", 
            R.version ="3.6.3", 
            checkpointLocation = getwd())
 
@@ -43,7 +43,8 @@ theme_AP <- function() {
 }
 
 
-## ----define_functions, cache=TRUE----------------------------------------
+
+## ----define_functions, cache=TRUE---------------------------------------
 
 # TEST FUNCTIONS ---------------------------------------------------------------
 
@@ -92,7 +93,7 @@ C1 <- function(X) {
 # The function by Morris 1991 is included in the sensitivity package
 
 
-## ----sample_matrices, cache=TRUE-----------------------------------------
+## ----sample_matrices, cache=TRUE----------------------------------------
 
 # SAMPLE MATRICES ------------------------------------------------------------
 
@@ -135,7 +136,7 @@ scrambled_replicas <- function(N, k, version) {
 }
 
 
-## ----sobol_function, cache=TRUE------------------------------------------
+## ----sobol_function, cache=TRUE-----------------------------------------
 
 # SOBOL' INDICES --------------------------------------------------------------
 
@@ -314,14 +315,14 @@ fun_algorithm <- function(max.exponent, epsilon_1, epsilon_2) {
 }
 
 
-## ----run_saving_algorithm, cache=TRUE, dependson="define_algorithm"------
+## ----run_saving_algorithm, cache=TRUE, dependson="define_algorithm"-----
 
 # RUN THE MODEL --------------------------------------------------------------
 
 # Define epsilons and max exponent
 epsilon_1 <- seq(0.05, 0.1, 0.05)
 epsilon_2 <- seq(0.01, 0.02, 0.005)
-max.exponent <- 13
+max.exponent <- 16
 
 # Run model
 out <- mclapply(epsilon_1, function(x) 
@@ -329,9 +330,11 @@ out <- mclapply(epsilon_1, function(x)
     fun_algorithm(max.exponent = max.exponent, epsilon_1 = x, epsilon_2 = y)), 
   mc.cores = detectCores())
 
+
 ## ----arrange_results_algorithm, cache=TRUE, dependson="run_saving_algorithm"----
 
 # ARRANGE RESULTS -------------------------------------------------------------
+
 test_functions <- c("G_Fun","G_Fun_mod","bratley1992_Fun", 
                     "oakley_Fun", "morris_Fun", "B1", "C1")
 
@@ -373,14 +376,8 @@ savings.dt <- lapply(tmp, function(x) lapply(x, function(y) {
                                                    ifelse(model == "B1", "B1", "C1"))))))]
 }))
 
-## ----export_results, cache=TRUE, dependson="arrange_results_algorithm"----
 
-# EXPORT MODEL RUNS -----------------------------------------------------------
-
-fwrite(results, "results.csv")
-fwrite(savings.dt, "savings.dt.csv")
-
-## ----plot_results_algorithm, cache=TRUE, dependson="arrange_results_algorithm", dev = "tikz", fig.height=4, fig.width=5, fig.cap="Evolution of the $T_i$ and the $T_s$ along different sample sizes. The horizontal, red dotted line is at 0.05."----
+## ----plot_results_algorithm, cache=TRUE, dependson="arrange_results_algorithm", dev = c("tikz", "jpeg"), dpi=300, fig.height=4, fig.width=5, fig.cap="Evolution of the $T_i$ and the $T_s$ along different sample sizes. The horizontal, red dotted line is at 0.05."----
 
 # PLOT RESULTS ---------------------------------------------------------------
 
@@ -409,7 +406,8 @@ lapply(results, function(x) lapply(x, function(y)
     theme_AP() + 
     theme(legend.position = "top"))) 
 
-## ----plot_savings, cache=TRUE, dependson="arrange_results_algorithm", dev = "tikz", fig.height=3, fig.width=6.5, fig.cap="Evolution of ranks for first and total-order indices across different base sample sizes"----
+
+## ----plot_savings, cache=TRUE, dependson="arrange_results_algorithm", dev = c("tikz", "jpeg"), dpi=300, fig.height=4, fig.width=6.5, fig.cap="Percentage of savings over the total accumulated model runs."----
 
 # PLOT SAVINGS ----------------------------------------------------------------
 
@@ -419,8 +417,8 @@ lapply(savings.dt, function(x) lapply(x, function(y)
     setnames(., "model", "Model")) %>%
     rbindlist(., idcol = "epsilon_2")) %>%
   rbindlist(., idcol = "epsilon_1") %>%
-  .[, epsilon_1:= paste("$epsilon_s= ", epsilon_1, "$", sep = "")] %>%
-  .[, epsilon_2:= paste("$epsilon_b= ", epsilon_2, "$", sep = "")] %>%
+  .[, epsilon_1:= paste("$\\varepsilon_s= ", epsilon_1, "$", sep = "")] %>%
+  .[, epsilon_2:= paste("$\\varepsilon_b= ", epsilon_2, "$", sep = "")] %>%
   ggplot(., aes(N, saving, color = Model, shape = Model, group = Model)) +
   geom_point() + 
   geom_line() +
@@ -432,16 +430,75 @@ lapply(savings.dt, function(x) lapply(x, function(y)
   facet_grid(epsilon_1 ~ epsilon_2) +
   theme_AP() + 
   theme(legend.position = "top") +
-  guides(color = guide_legend(nrow = 1,byrow = TRUE))
-    
+  guides(color = guide_legend(nrow = 3, byrow = TRUE))
 
-## ----plot_ranks, cache=TRUE, dependson="arrange_results_algorithm", dev = "tikz", fig.height=8, fig.width=4, fig.cap="Percentage of saving over the total accumulated model runs."----
+
+## ----plot_savings_functions2, cache=TRUE, dependson="arrange_results_algorithm", dev = c("tikz", "jpeg"), dpi=300, fig.height=4, fig.width=6.5, fig.cap="Percentage of savings over the total accumulated model runs."----
+
+# PLOT SAVINGS ------------------------------------------------------------------
+
+lapply(savings.dt, function(x) lapply(x, function(y) 
+  melt(y, measure.vars = c("New.approach", "Normal.approach")) %>%
+    .[, saving:= saving * 100] %>%
+    setnames(., "model", "Model")) %>%
+    rbindlist(., idcol = "epsilon_2")) %>%
+  rbindlist(., idcol = "epsilon_1") %>%
+  .[, epsilon_1:= paste("$\\varepsilon_s= ", epsilon_1, "$", sep = "")] %>%
+  .[, epsilon_2:= paste("$\\varepsilon_b= ", epsilon_2, "$", sep = "")] %>%
+  .[!Model %in% c("C1", "B1", "Sobol G modified")] %>%
+  ggplot(., aes(N, saving, color = Model, shape = Model, group = Model)) +
+  geom_point() + 
+  geom_line() +
+  scale_x_continuous(trans="log",
+                     breaks = trans_breaks("log2", function(x) 2 ^ x),
+                     labels = trans_format("log2", math_format(2^.x))) +
+  labs(x = "Number of model runs", 
+       y = "Saving (\\%)") +
+  facet_grid(epsilon_1 ~ epsilon_2) +
+  theme_AP() + 
+  theme(legend.position = "top") +
+  guides(color = guide_legend(nrow = 1, byrow = TRUE))
+
+
+## ----plot_ranks, cache=TRUE, dependson="arrange_results_algorithm", dev = c("tikz", "jpeg"), dpi=300, fig.height=8.5, fig.width=4, fig.cap="Evolution of ranks for total-order indices across different base sample sizes"----
 
 # PLOT RANKS ------------------------------------------------------------------
 
 results[[2]][[3]][method == "Normal.approach"] %>%
   .[, sensitivity:= ifelse(sensitivity %in% "Si", "$S_i$", "$T_i$")] %>%
-  .[sensitivity == "$S_i$"] %>%
+  .[sensitivity == "$T_i$"] %>%
+  ggplot(., aes(N, ranks, group = parameters,
+                color = parameters)) +
+  geom_point(size = 0.5) +
+  geom_line() +
+  labs(x = "Base sample size",
+       y = "Rank") +
+  scale_color_discrete(name = "Parameters") +
+  scale_x_continuous(trans="log",
+                     breaks = trans_breaks("log2", function(x) 2 ^ x),
+                     labels = trans_format("log2", math_format(2^.x))) +
+  scale_y_reverse() +
+  facet_grid(model ~ sensitivity,
+             scales = "free_y") +
+  theme_bw() +
+  theme(legend.position = "top",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.background = element_rect(fill = "transparent",
+                                         color = NA),
+        legend.key = element_rect(fill = "transparent",
+                                  color = NA), 
+        strip.text.y = element_text(size = 7))
+
+
+## ----plot_ranks_functions, cache=TRUE, dependson="arrange_results_algorithm", dev = c("tikz", "jpeg"), dpi=300, fig.height=8, fig.width=4, fig.cap="Evolution of ranks for total-order indices across different base sample sizes."----
+
+# PLOT RANKS ------------------------------------------------------------------
+
+results[[2]][[3]][method == "Normal.approach"] %>%
+  .[, sensitivity:= ifelse(sensitivity %in% "Si", "$S_i$", "$T_i$")] %>%
+  .[sensitivity == "$T_i$"] %>%
+  .[!model %in% c("C1", "B1", "Sobol G modified")] %>%
   ggplot(., aes(N, ranks, group = parameters,
                 color = parameters)) +
   geom_point(size = 0.5) +
@@ -464,69 +521,8 @@ results[[2]][[3]][method == "Normal.approach"] %>%
         legend.key = element_rect(fill = "transparent",
                                   color = NA))
 
-## ----MAE, cache=TRUE, dependson="arrange_results_algorithm", fig.height = 6.5, fig.width = 3, dev="tikz", fig.cap="Mean Absolute Error for the Oakley and O'Hagan function."----
 
-# COMPUTATION OF MEAN ABSOLUTE ERROR ------------------------------------------
-
-# The analytical values for the Oakley and O'Hagan function
-dt.analytics <- data.table(parameters = paste("X", 1:15, sep = ""), 
-                           analytical = c(0.059, 0.063, 0.036, 0.055, 0.024, 0.041, 
-                                          0.058, 0.082, 0.097, 0.036, 0.151, 0.148, 
-                                          0.142, 0.141, 0.155))
-
-# Select rows
-AE.test <- results[model == "Oakley and O'Hagan 2004" &
-                     sensitivity == "STi" & 
-                     N >= 512]
-
-# Compute the Absolute Error (AE) for the non-clustered parameters
-# Compute the Absolute Error (AE) for the non-clustered parameters
-AE.ns <- merge(AE.test, dt.analytics, by = "parameters", all.x = TRUE) %>%
-  .[, AE_ns:= abs(indices - analytical)]
-
-# Extract vector with the clustered parameters
-pars <- AE.ns[method =="Normal.approach" &
-                indices < 0.05][, unique(parameters)]
-
-# Compute the sum of the analytical values of the clustered parameters
-tmp <- AE.ns[parameters %in% pars][, .(tmp = sum(indices)), .(N, model.runs)]
-
-# Compute the AE for the set of clustered parameters (AE.s)
-AE.s <- AE.ns[parameters == "set"] %>%
-  .[tmp, on = "N"] %>%
-  .[, .(AE_s = abs(indices - tmp)), .(N, model.runs)]
-
-# Compute MAE, MAE_s, and MAE average
-full.AE <- AE.ns[AE.s, on = "N"] %>%
-  .[, .(MAE_S = (sum(AE_ns, na.rm = TRUE) + AE_s) / 15, 
-        MAE = mean(abs(indices - analytical), na.rm = TRUE)), .(N, model.runs, method)] %>%
-  .[, average.MAE:= (MAE_S + MAE) / 15]
-
-# Plot results
-full.AE <- setnames(full.AE, 
-                    c("MAE_S", "MAE", "average.MAE"), 
-                    c("$T_s$", "$T_i$", "$(T_i + T_s) / k$"))
-
-melt(full.AE, measure.vars = c("$T_s$", "$T_i$", "$(T_i + T_s) / k$")) %>%
-  ggplot(., aes(model.runs, value, color = method)) +
-  geom_point() +
-  geom_line() +
-  labs(x = "Number of model runs", 
-       y = "MAE") +
-  scale_x_continuous(trans="log",
-                     breaks = trans_breaks("log2", function(x) 2 ^ x),
-                     labels = trans_format("log2", math_format(2^.x))) +
-  scale_color_discrete(name = "Method", 
-                       labels = c("New approach", "Traditional approach")) +
-  facet_wrap(~ variable, 
-             ncol = 1,
-             scales = "free_y") +
-  theme_AP() +
-  theme(legend.position = "top") +
-  guides(color = guide_legend(nrow = 2, byrow = TRUE))
-
-
-## ----session_information-------------------------------------------------
+## ----session_information------------------------------------------------
 
 # SESSION INFORMATION ---------------------------------------------------------
 
